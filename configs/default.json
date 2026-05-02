@@ -1,0 +1,13 @@
+{
+  "business_name": "Tech Bros Agency",
+  "hours": "Mon-Sat, 9am-6pm",
+  "address": "Plateau, Nigeria",
+  "phone": "+2348130254420",
+  "faq": {
+    "hours": "We open Mon-Sat, 9am-6pm.",
+    "address": "We are located in Plateau, Nigeria.",
+    "delivery": "Delivery availability depends on your location. Please share your area.",
+    "price": "Please tell us the product or service you want, and we will confirm the price."
+  },
+  "lead_keywords": ["price", "contact me", "delivery", "order", "how much"]
+}

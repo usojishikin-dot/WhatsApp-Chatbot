@@ -1,0 +1,27 @@
+{
+  "name": "whatsapp-faq-lead-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp FAQ and lead capture bot for Nigeria SMEs",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node test/run-tests.js",
+    "video:studio": "remotion studio remotion/index.ts",
+    "video:render": "remotion render remotion/index.ts WhatsappBotShort out/whatsapp-bot-short.mp4",
+    "video:still": "remotion still remotion/index.ts WhatsappBotShort out/whatsapp-bot-short.png --frame=60"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.366",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "remotion": "4.0.366"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2"
+  },
+  "license": "UNLICENSED"
+}

@@ -74,6 +74,33 @@ test("JSON webhook falls back, stores history, and captures lead", async () => {
   });
 });
 
+test("fallback matches delivery FAQ for deliver wording", async () => {
+  const { root, configDir, config } = tempEnv();
+  writeFileSync(path.join(configDir, "2348000000000.json"), JSON.stringify(config));
+
+  const env = {
+    CONFIG_DIR: configDir,
+    DB_PATH: path.join(root, "bot.sqlite"),
+    LOG_DIR: path.join(root, "logs")
+  };
+
+  await withServer({ ...env, root }, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/webhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        from: "whatsapp:+2347000000001",
+        to: "whatsapp:+2348000000000",
+        body: "Do you deliver?"
+      })
+    });
+
+    const data = await response.json();
+    assert.equal(data.reply, "We deliver within Lagos.");
+  });
+});
+
+
 test("Twilio handoff starts a session and later returns empty TwiML", async () => {
   const { root, configDir, config } = tempEnv();
   writeFileSync(path.join(configDir, "2348000000000.json"), JSON.stringify(config));

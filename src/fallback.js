@@ -11,6 +11,8 @@ export function keywordFallbackReply(message, config) {
   const lower = String(message).toLowerCase();
   const messageTerms = termsForText(lower);
   const faqEntries = Object.entries(config.faq || {});
+  const smallTalk = smallTalkReply(lower, config);
+  if (smallTalk) return limitReply(smallTalk);
 
   for (const [question, answer] of faqEntries) {
     const questionTerms = termsForText(question);
@@ -50,6 +52,22 @@ function setsIntersect(left, right) {
     if (right.has(value)) return true;
   }
   return false;
+}
+
+function smallTalkReply(message, config) {
+  if (/\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(message)) {
+    return `Hello, welcome to ${config.business_name}. How can we help you today?`;
+  }
+
+  if (/\b(thanks|thank you|appreciate it)\b/i.test(message)) {
+    return `You're welcome. ${config.business_name} is happy to help.`;
+  }
+
+  if (/\b(bye|goodbye|see you)\b/i.test(message)) {
+    return `Thank you for contacting ${config.business_name}. Have a great day.`;
+  }
+
+  return "";
 }
 
 function stemWord(word) {

@@ -2,11 +2,12 @@ import http from "node:http";
 import { URL } from "node:url";
 import { fileURLToPath } from "node:url";
 import { loadDotEnv } from "./env.js";
-import { openDatabase, dbHealth, addHistory, getLastExchanges, saveLead, setHandoff, isInHandoff } from "./db.js";
+import { openDatabase, dbHealth, addHistory, getLastExchanges, saveLead, getRecentLeads, setHandoff, isInHandoff } from "./db.js";
 import { loadBusinessConfig, normalizeWhatsappNumber } from "./config.js";
 import { containsAnyKeyword, isHandoffRequest, keywordFallbackReply } from "./fallback.js";
 import { generateAiReply, llmConfigured } from "./llm.js";
 import { createLogger } from "./logger.js";
+import { appendLeadToSheet } from "./sheets.js";
 
 const DEFAULT_PORT = 3000;
 
@@ -20,6 +21,11 @@ export function createApp({ db = openDatabase(), logger = createLogger(), env = 
       if (req.method === "GET" && url.pathname === "/health") {
         const payload = healthPayload(db, env);
         return sendJson(res, payload, payload.ok ? 200 : 503);
+      }
+
+      if (req.method === "GET" && url.pathname === "/leads") {
+        if (!isAuthorized(req, env)) return sendJson(res, { error: "unauthorized" }, 401);
+        return sendJson(res, { leads: getRecentLeads(db, url.searchParams.get("limit")) });
       }
 
       if (req.method === "POST" && url.pathname === "/webhook") {
@@ -66,7 +72,16 @@ async function handleWebhook(req, res, { db, logger, env }) {
   if (containsAnyKeyword(body, config.lead_keywords)) {
     saveLead(db, from, body);
     logger.lead({ from, to, enquiry: body });
-    appendLeadToSheet({ sender: from, enquiry: body, env, logger }).catch((error) => {
+    appendLeadToSheet({
+      lead: {
+        sender: from,
+        businessNumber: to,
+        businessName: config.business_name,
+        enquiry: body
+      },
+      env,
+      logger
+    }).catch((error) => {
       logger.error({ type: "sheet_append_failed", message: error.message });
     });
   }
@@ -135,17 +150,6 @@ function readRequest(req) {
   });
 }
 
-async function appendLeadToSheet({ sender, enquiry, env, logger }) {
-  if (!env.GOOGLE_SHEET_WEBHOOK_URL) return;
-  const response = await fetch(env.GOOGLE_SHEET_WEBHOOK_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sender, enquiry, timestamp: new Date().toISOString() })
-  });
-  if (!response.ok) throw new Error(`Sheet webhook failed: ${response.status}`);
-  logger.lead({ sender, enquiry, sheet: "appended" });
-}
-
 function sendJson(res, payload, status = 200) {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(payload));
@@ -155,6 +159,11 @@ function sendTwiml(res, message) {
   const escaped = escapeXml(message);
   res.writeHead(200, { "content-type": "text/xml" });
   res.end(escaped ? `<Response><Message>${escaped}</Message></Response>` : "<Response></Response>");
+}
+
+function isAuthorized(req, env) {
+  if (!env.ADMIN_API_KEY) return false;
+  return req.headers.authorization === `Bearer ${env.ADMIN_API_KEY}`;
 }
 
 function escapeXml(value) {

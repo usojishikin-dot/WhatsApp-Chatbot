@@ -32,6 +32,10 @@ LOG_DIR=./logs
 LLM_PROVIDER=openrouter
 OPENROUTER_API_KEY=...
 OPENROUTER_MODEL=meta-llama/llama-3.1-8b-instruct:free
+ADMIN_API_KEY=change-this-secret
+GOOGLE_SHEET_WEBHOOK_URL=https://script.google.com/macros/s/your-apps-script-id/exec
+GOOGLE_SHEET_WEBHOOK_SECRET=optional-shared-secret
+GOOGLE_SHEET_TIMEOUT_MS=3000
 ```
 
 Supported `LLM_PROVIDER` values are `openrouter`, `groq`, and `gemini`. If the LLM fails or takes more than 5 seconds, the bot automatically falls back to FAQ keyword matching.
@@ -98,14 +102,65 @@ Lead keywords are configured per client. Matching messages are stored in SQLite:
 SELECT * FROM leads ORDER BY id DESC;
 ```
 
-To append leads elsewhere, set `GOOGLE_SHEET_WEBHOOK_URL` to a Google Apps Script or automation webhook that accepts:
+Recent leads can also be viewed through the protected admin endpoint:
+
+```bash
+curl -H "Authorization: Bearer your-admin-key" https://your-service.onrender.com/leads
+```
+
+## Google Sheets Lead Capture
+
+Set `GOOGLE_SHEET_WEBHOOK_URL` to a Google Apps Script web app URL. Every message matching a client's `lead_keywords` is still saved in SQLite and is also posted to the sheet webhook in the background.
+
+The webhook receives:
 
 ```json
 {
+  "timestamp": "2026-05-02T12:00:00.000Z",
   "sender": "+2347000000000",
+  "businessNumber": "+2348012345678",
+  "businessName": "Ada Foods",
   "enquiry": "How much is delivery?",
-  "timestamp": "2026-05-02T..."
+  "source": "whatsapp"
 }
+```
+
+Optional: set `GOOGLE_SHEET_WEBHOOK_SECRET` when using an automation platform or webhook tool that can read the `x-webhook-secret` request header. For Google Apps Script, use a query-string secret as shown below because Apps Script does not reliably expose custom request headers in all deployments.
+
+Minimal Apps Script example:
+
+```js
+const SHEET_NAME = "Leads";
+const WEBHOOK_SECRET = ""; // Optional: match GOOGLE_SHEET_WEBHOOK_SECRET.
+
+function doPost(e) {
+  if (WEBHOOK_SECRET && e.parameter.secret !== WEBHOOK_SECRET) {
+    return ContentService.createTextOutput("unauthorized").setMimeType(ContentService.MimeType.TEXT);
+  }
+
+  const data = JSON.parse(e.postData.contents);
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(SHEET_NAME) || spreadsheet.insertSheet(SHEET_NAME);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["Timestamp", "Sender", "Business Number", "Business Name", "Enquiry", "Source"]);
+  }
+  sheet.appendRow([
+    data.timestamp,
+    data.sender,
+    data.businessNumber,
+    data.businessName,
+    data.enquiry,
+    data.source
+  ]);
+
+  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON);
+}
+```
+
+For the Apps Script example above, add the secret as a query string in `GOOGLE_SHEET_WEBHOOK_URL`:
+
+```bash
+GOOGLE_SHEET_WEBHOOK_URL=https://script.google.com/macros/s/your-apps-script-id/exec?secret=your-secret
 ```
 
 ## Human Handoff

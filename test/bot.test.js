@@ -39,6 +39,39 @@ async function withServer(env, fn) {
   }
 }
 
+async function withSheetReceiver(fn) {
+  let resolveRequest;
+  const received = new Promise((resolve) => {
+    resolveRequest = resolve;
+  });
+  const server = http.createServer(async (req, res) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+      resolveRequest({ headers: req.headers, body: JSON.parse(body) });
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, resolve));
+  const url = `http://127.0.0.1:${server.address().port}/sheet`;
+  try {
+    await fn(url, received);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+function timeout(ms) {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error("timed out waiting for sheet webhook")), ms);
+  });
+}
+
 test("JSON webhook falls back, stores history, and captures lead", async () => {
   const { root, configDir, config } = tempEnv();
   writeFileSync(path.join(configDir, "2348000000000.json"), JSON.stringify(config));
@@ -71,6 +104,43 @@ test("JSON webhook falls back, stores history, and captures lead", async () => {
 
     const history = db.prepare("SELECT role, message FROM history ORDER BY id").all();
     assert.deepEqual(history.map((row) => row.role), ["user", "assistant"]);
+  });
+});
+
+test("lead capture posts matching enquiries to Google Sheets webhook", async () => {
+  const { root, configDir, config } = tempEnv();
+  writeFileSync(path.join(configDir, "2348000000000.json"), JSON.stringify(config));
+
+  await withSheetReceiver(async (sheetUrl, received) => {
+    const env = {
+      CONFIG_DIR: configDir,
+      DB_PATH: path.join(root, "bot.sqlite"),
+      LOG_DIR: path.join(root, "logs"),
+      GOOGLE_SHEET_WEBHOOK_URL: sheetUrl,
+      GOOGLE_SHEET_WEBHOOK_SECRET: "sheet-secret"
+    };
+
+    await withServer({ ...env, root }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/webhook`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          from: "whatsapp:+2347000000003",
+          to: "whatsapp:+2348000000000",
+          body: "How much is delivery?"
+        })
+      });
+
+      assert.equal(response.status, 200);
+      const request = await Promise.race([received, timeout(1000)]);
+      assert.equal(request.headers["x-webhook-secret"], "sheet-secret");
+      assert.equal(request.body.sender, "+2347000000003");
+      assert.equal(request.body.businessNumber, "+2348000000000");
+      assert.equal(request.body.businessName, "Ada Foods");
+      assert.equal(request.body.enquiry, "How much is delivery?");
+      assert.equal(request.body.source, "whatsapp");
+      assert.match(request.body.timestamp, /^\d{4}-\d{2}-\d{2}T/);
+    });
   });
 });
 
@@ -174,5 +244,41 @@ test("health reports missing LLM key as unavailable", async () => {
     const data = await response.json();
     assert.equal(data.db, "ok");
     assert.equal(data.llm_api_key, "missing");
+  });
+});
+
+test("leads endpoint requires admin API key", async () => {
+  const { root, configDir, config } = tempEnv();
+  writeFileSync(path.join(configDir, "default.json"), JSON.stringify(config));
+
+  await withServer({ root, CONFIG_DIR: configDir, ADMIN_API_KEY: "secret-key" }, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/leads`);
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { error: "unauthorized" });
+  });
+});
+
+test("authorized leads endpoint returns recent leads", async () => {
+  const { root, configDir, config } = tempEnv();
+  writeFileSync(path.join(configDir, "default.json"), JSON.stringify(config));
+
+  await withServer({ root, CONFIG_DIR: configDir, ADMIN_API_KEY: "secret-key" }, async (baseUrl) => {
+    await fetch(`${baseUrl}/webhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        from: "whatsapp:+2347000000000",
+        to: "whatsapp:+2348000000000",
+        body: "How much is delivery?"
+      })
+    });
+
+    const response = await fetch(`${baseUrl}/leads`, {
+      headers: { authorization: "Bearer secret-key" }
+    });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.leads.length, 1);
+    assert.equal(data.leads[0].enquiry, "How much is delivery?");
   });
 });

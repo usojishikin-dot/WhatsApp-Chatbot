@@ -58,6 +58,16 @@ export function saveLead(db, sender, enquiry) {
   db.prepare("INSERT INTO leads (sender, enquiry) VALUES (?, ?)").run(sender, enquiry);
 }
 
+export function getRecentLeads(db, limit = 50) {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+  return db.prepare(`
+    SELECT id, sender, enquiry, timestamp
+    FROM leads
+    ORDER BY id DESC
+    LIMIT ?
+  `).all(safeLimit);
+}
+
 export function setHandoff(db, sender, ttlHours = Number(process.env.HANDOFF_TTL_HOURS || 24)) {
   const until = new Date(Date.now() + ttlHours * 60 * 60 * 1000).toISOString();
   db.prepare(`

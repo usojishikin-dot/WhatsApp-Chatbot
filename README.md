@@ -198,6 +198,10 @@ The owner number in `OWNER_WHATSAPP_NUMBER` must first join the same Twilio Sand
 npm test
 ```
 
+## Demo Script
+
+Use `DEMO_SCRIPT.md` when showing the bot to business owners. It includes the exact WhatsApp messages to send, expected results, and a simple pitch.
+
 ## Marketing Video
 
 This repo includes a Remotion vertical short for advertising the bot.

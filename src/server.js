@@ -8,6 +8,7 @@ import { containsAnyKeyword, isHandoffRequest, keywordFallbackReply } from "./fa
 import { generateAiReply, llmConfigured } from "./llm.js";
 import { createLogger } from "./logger.js";
 import { appendLeadToSheet } from "./sheets.js";
+import { notifyOwnerOnWhatsapp } from "./notifications.js";
 
 const DEFAULT_PORT = 3000;
 
@@ -66,6 +67,18 @@ async function handleWebhook(req, res, { db, logger, env }) {
     addHistory(db, from, "user", body);
     addHistory(db, from, "assistant", reply);
     logger.message({ direction: "outbound", from, to, body: reply, mode: "handoff" });
+    notifyOwnerOnWhatsapp({
+      event: {
+        type: "handoff",
+        sender: from,
+        businessName: config.business_name,
+        message: body
+      },
+      env,
+      logger
+    }).catch((error) => {
+      logger.error({ type: "owner_notify_failed", message: error.message });
+    });
     return wantsXml ? sendTwiml(res, reply) : sendJson(res, { reply, status: "handoff_started" });
   }
 
@@ -83,6 +96,18 @@ async function handleWebhook(req, res, { db, logger, env }) {
       logger
     }).catch((error) => {
       logger.error({ type: "sheet_append_failed", message: error.message });
+    });
+    notifyOwnerOnWhatsapp({
+      event: {
+        type: "lead",
+        sender: from,
+        businessName: config.business_name,
+        message: body
+      },
+      env,
+      logger
+    }).catch((error) => {
+      logger.error({ type: "owner_notify_failed", message: error.message });
     });
   }
 

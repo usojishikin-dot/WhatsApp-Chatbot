@@ -66,6 +66,37 @@ async function withSheetReceiver(fn) {
   }
 }
 
+async function withTwilioReceiver(fn) {
+  let resolveRequest;
+  const received = new Promise((resolve) => {
+    resolveRequest = resolve;
+  });
+  const server = http.createServer(async (req, res) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      body += chunk;
+    });
+    req.on("end", () => {
+      res.writeHead(201, { "content-type": "application/json" });
+      res.end(JSON.stringify({ sid: "SM_test" }));
+      resolveRequest({
+        headers: req.headers,
+        url: req.url,
+        body: Object.fromEntries(new URLSearchParams(body))
+      });
+    });
+  });
+
+  await new Promise((resolve) => server.listen(0, resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  try {
+    await fn(url, received);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
 function timeout(ms) {
   return new Promise((_, reject) => {
     setTimeout(() => reject(new Error("timed out waiting for sheet webhook")), ms);
@@ -140,6 +171,46 @@ test("lead capture posts matching enquiries to Google Sheets webhook", async () 
       assert.equal(request.body.enquiry, "How much is delivery?");
       assert.equal(request.body.source, "whatsapp");
       assert.match(request.body.timestamp, /^\d{4}-\d{2}-\d{2}T/);
+    });
+  });
+});
+
+test("lead capture sends WhatsApp owner notification through Twilio", async () => {
+  const { root, configDir, config } = tempEnv();
+  writeFileSync(path.join(configDir, "2348000000000.json"), JSON.stringify(config));
+
+  await withTwilioReceiver(async (twilioUrl, received) => {
+    const env = {
+      CONFIG_DIR: configDir,
+      DB_PATH: path.join(root, "bot.sqlite"),
+      LOG_DIR: path.join(root, "logs"),
+      TWILIO_API_BASE_URL: twilioUrl,
+      TWILIO_ACCOUNT_SID: "AC_test",
+      TWILIO_AUTH_TOKEN: "auth-token",
+      TWILIO_WHATSAPP_FROM: "+14155238886",
+      OWNER_WHATSAPP_NUMBER: "+2348012345678"
+    };
+
+    await withServer({ ...env, root }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/webhook`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          from: "whatsapp:+2347000000004",
+          to: "whatsapp:+2348000000000",
+          body: "I want to order"
+        })
+      });
+
+      assert.equal(response.status, 200);
+      const request = await Promise.race([received, timeout(1000)]);
+      assert.equal(request.url, "/2010-04-01/Accounts/AC_test/Messages.json");
+      assert.equal(request.body.From, "whatsapp:+14155238886");
+      assert.equal(request.body.To, "whatsapp:+2348012345678");
+      assert.match(request.body.Body, /New lead for Ada Foods/);
+      assert.match(request.body.Body, /Customer: \+2347000000004/);
+      assert.match(request.body.Body, /Message: I want to order/);
+      assert.equal(request.headers.authorization, `Basic ${Buffer.from("AC_test:auth-token").toString("base64")}`);
     });
   });
 });
@@ -231,6 +302,45 @@ test("Twilio handoff starts a session and later returns empty TwiML", async () =
       })
     });
     assert.equal(await second.text(), "<Response></Response>");
+  });
+});
+
+test("handoff sends WhatsApp owner notification through Twilio", async () => {
+  const { root, configDir, config } = tempEnv();
+  writeFileSync(path.join(configDir, "2348000000000.json"), JSON.stringify(config));
+
+  await withTwilioReceiver(async (twilioUrl, received) => {
+    const env = {
+      CONFIG_DIR: configDir,
+      DB_PATH: path.join(root, "bot.sqlite"),
+      LOG_DIR: path.join(root, "logs"),
+      HANDOFF_TTL_HOURS: "24",
+      TWILIO_API_BASE_URL: twilioUrl,
+      TWILIO_ACCOUNT_SID: "AC_test",
+      TWILIO_AUTH_TOKEN: "auth-token",
+      TWILIO_WHATSAPP_FROM: "whatsapp:+14155238886",
+      OWNER_WHATSAPP_NUMBER: "whatsapp:+2348012345678"
+    };
+
+    await withServer({ ...env, root }, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/webhook`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          from: "whatsapp:+2347000000005",
+          to: "whatsapp:+2348000000000",
+          body: "agent"
+        })
+      });
+
+      assert.equal(response.status, 200);
+      const request = await Promise.race([received, timeout(1000)]);
+      assert.equal(request.body.From, "whatsapp:+14155238886");
+      assert.equal(request.body.To, "whatsapp:+2348012345678");
+      assert.match(request.body.Body, /Human requested for Ada Foods/);
+      assert.match(request.body.Body, /Customer: \+2347000000005/);
+      assert.match(request.body.Body, /Message: agent/);
+    });
   });
 });
 

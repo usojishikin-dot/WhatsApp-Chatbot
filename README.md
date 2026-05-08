@@ -36,6 +36,11 @@ ADMIN_API_KEY=change-this-secret
 GOOGLE_SHEET_WEBHOOK_URL=https://script.google.com/macros/s/your-apps-script-id/exec
 GOOGLE_SHEET_WEBHOOK_SECRET=optional-shared-secret
 GOOGLE_SHEET_TIMEOUT_MS=3000
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+OWNER_WHATSAPP_NUMBER=whatsapp:+2348012345678
+OWNER_NOTIFY_TIMEOUT_MS=3000
 ```
 
 Supported `LLM_PROVIDER` values are `openrouter`, `groq`, and `gemini`. If the LLM fails or takes more than 5 seconds, the bot automatically falls back to FAQ keyword matching.
@@ -166,6 +171,26 @@ GOOGLE_SHEET_WEBHOOK_URL=https://script.google.com/macros/s/your-apps-script-id/
 ## Human Handoff
 
 When a user types `human` or `agent`, the bot replies with the configured owner phone number and suppresses automated replies for that sender for `HANDOFF_TTL_HOURS` hours.
+
+## Owner WhatsApp Notifications
+
+Set the Twilio variables below to alert the business owner on WhatsApp when a lead is captured or a user asks for `human` / `agent`.
+
+```bash
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+OWNER_WHATSAPP_NUMBER=whatsapp:+2348012345678
+OWNER_NOTIFY_TIMEOUT_MS=3000
+```
+
+For Twilio Sandbox, `TWILIO_WHATSAPP_FROM` is usually:
+
+```text
+whatsapp:+14155238886
+```
+
+The owner number in `OWNER_WHATSAPP_NUMBER` must first join the same Twilio Sandbox by sending the current `join ...` code to the Sandbox WhatsApp number. Sandbox membership expires after 72 hours.
 
 ## Tests
 
